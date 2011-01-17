@@ -49,6 +49,7 @@ class saArchive
 	
 	const FETCH_TYPE_TREE = 'tree';
 	const FETCH_TYPE_LIST = 'list';
+	const FETCH_TYPE_LIST = 'list_recursive';
 	
 	const FILTER_OLDER_THAN = 'older_than';
 	const FILTER_OLDER_THAN_REGEX = "/^older_than:(\d+)d(\d+)m(\d+)y$/";
@@ -199,7 +200,11 @@ class saArchive
 			{
 
 				// Is the fetch type valid
-				if ( ($fetchType != self::FETCH_TYPE_TREE) && ($fetchType != self::FETCH_TYPE_LIST))
+				if (
+					($fetchType != self::FETCH_TYPE_TREE)
+					&& ($fetchType != self::FETCH_TYPE_LIST)
+					&& ($fetchType != self::FETCH_TYPE_LIST_RECURSIVE)
+				)
 				{
 					self::_Message("Invalid fetch type '$fetchType' for node ID '$nodeID' for job: $jobName");
 					return false;
@@ -510,7 +515,10 @@ class saArchive
 			$params = array();
 			$attributeFilter= array();
 			
-			if ($fetchParams['fetch_function'] == 'list')
+			if (
+				($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST)
+				|| ($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST_RECURSIVE)
+			)
 				$params['Depth'] = 1;
 
 			if ($fetchParams['filter'][0] == 'older_than')
