@@ -509,31 +509,68 @@ class saArchive
 		
 		$current_time = time();
 		
+	
 		foreach ($parentNodes as $nodeID => $fetchParams)
 		{
-			
-			$params = array();
-			$attributeFilter= array();
-			
-			if (
-				($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST)
-				|| ($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST_RECURSIVE)
-			)
-				$params['Depth'] = 1;
+			$this->_ProcessNodes($job, $nodeID, $fetchParams);
+		}
+	}
 
-			if ($fetchParams['filter'][0] == 'older_than')
-				$attributeFilter[] = array('published', '<', $current_time - $fetchParams['filter'][1]);
+	private function _ProcessNodes($job, $parentNodeID, $fetchParams)
+	{
+			
+		$params = array();
+		$attributeFilter= array();
+			
+		if (
+			($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST)
+			|| ($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST_RECURSIVE)
+		)
+			$params['Depth'] = 1;
+
+		if ($fetchParams['filter'][0] == 'older_than')
+			$attributeFilter[] = array('published', '<', $current_time - $fetchParams['filter'][1]);
 				
-			if ($fetchParams['filter'][0] == 'more_than')
-				$params['Offset'] = $fetchParams['filter'][1];
+		if ($fetchParams['filter'][0] == 'more_than')
+			$params['Offset'] = $fetchParams['filter'][1];
 
 
-			if (isset($fetchParams['class_filter_type']))
-				$params['ClassFilterType'] = $fetchParams['class_filter_type'];
-			if (isset($fetchParams['class_filter_array']))
-				$params['ClassFilterArray'] = $fetchParams['class_filter_array'];
+		if (isset($fetchParams['class_filter_type']))
+			$params['ClassFilterType'] = $fetchParams['class_filter_type'];
+		if (isset($fetchParams['class_filter_array']))
+			$params['ClassFilterArray'] = $fetchParams['class_filter_array'];
 
 
+		if (isset($job['section_filters']))
+		{
+			foreach ($job['section_filters'] as $filterOperator => $sections)
+			{
+				$attributeFilter[] = array('section', $filterOperator, $sections);
+			}
+		}
+			
+			
+		if ($attributeFilter)
+		{
+			array_unshift($attributeFilter, 'and');
+			$params['AttributeFilter'] = $attributeFilter;
+		}
+			
+#echo "#". date("d.m.Y", $current_time) . "#\n";
+#echo "#". $fetchParams['filter'][1] . "#\n";
+#echo "#". date("d.m.Y", $current_time - $fetchParams['filter'][1]) . "#\n";
+
+		$params['SortBy'] = array('published', false);
+			
+		self::_Message("Fetching nodes for node ID: '$parentNodeID' ($fetchParams[fetch_function])");
+
+//			print_r($params);
+//exit;
+		if ($fetchParams['fetch_function'] == self::FETCH_TYPE_LIST_RECURSIVE)
+		{
+			$container_params['ClassFilterType'] = 'include';
+			$container_params['ClassFilterArray'] = $job['container_classes'];
+			$container_params['Depth'] = 1;
 
 			if (isset($job['section_filters']))
 			{
@@ -543,79 +580,80 @@ class saArchive
 				}
 			}
 			
-			
 			if ($attributeFilter)
 			{
 				array_unshift($attributeFilter, 'and');
-				$params['AttributeFilter'] = $attributeFilter;
+				$container_params['AttributeFilter'] = $attributeFilter;
 			}
-			
-#echo "#". date("d.m.Y", $current_time) . "#\n";
-#echo "#". $fetchParams['filter'][1] . "#\n";
-#echo "#". date("d.m.Y", $current_time - $fetchParams['filter'][1]) . "#\n";
 
-			$params['SortBy'] = array('published', false);
-			
-			self::_Message("Fetching nodes for node ID: '$nodeID' ($fetchParams[fetch_function])");
+			unset($containerNodes);
+			$containerNodes =& eZContentObjectTreeNode::subTreeByNodeID($container_params, $parentNodeID);
+		}
+		else $containerNodes = false;
 
-//			print_r($params);
-//exit;
-			unset($nodes);
-			$nodes =& eZContentObjectTreeNode::subTreeByNodeID($params, $nodeID);
-			$nodesCount = count($nodes);
-
-			self::_Message("Number of fetched nodes: $nodesCount");
-			
-			if ($nodesCount > 0)
+		if ($containerNodes)
+		{
+			foreach ($containerNodes as $containerNode)
 			{
-				self::_Message("Archiving nodes...");
+				$this->_ProcessNodes($job, $containerNode->attribute('node_id'), $fetchParams);
+			}
+		}
 
-				foreach ($nodes as $index => $node)
-				{
-					unset($object);
-					$object =& $node->attribute('object');
-					
-					foreach ($job['actions'] as $action);
-					{
-						switch ($action)
-						{
-								case self::ACTION_CHANGE_SECTION:
+		unset($nodes);
+		$nodes =& eZContentObjectTreeNode::subTreeByNodeID($params, $nodeID);
+		$nodesCount = count($nodes);
 
-									$sectionID = $object->attribute('section_id');
-									
-									if ( array_key_exists($sectionID, $job['section_mappings']) )
-									{
-											$newSectionID = $job['section_mappings'][$sectionID];
-											
-											self::_Message("Parent node $nodeID ($index/$nodesCount): Changing section ID from $sectionID to $newSectionID for object " . $object->attribute('name') . " (ID: " . $object->attribute('id') . ")");
-											$object->setAttribute('section_id', $newSectionID);
-											$object->store();
-											$processedNodes[$action]++;
-									}
-								break;
-								case self::ACTION_MOVE:
-									$result['actions'][] = $action;
-								break;
-								case self::ACTION_HIDE:
-									$result['actions'][] = $action;
-								break;
-								case self::ACTION_DELETE:
-									$result['actions'][] = $action;
-								break;
+		self::_Message("Number of fetched nodes: $nodesCount");
 			
-								default:
-									// This shouldnt happen if INI parsing did the job								
-									self::_Message("Unknown action while processing job $jobName. This should not happen, please contact the saarchive author");
-								break;
-						}
+		if ($nodesCount > 0)
+		{
+			self::_Message("Archiving nodes...");
+
+			foreach ($nodes as $index => $node)
+			{
+				unset($object);
+				$object =& $node->attribute('object');
+				
+				foreach ($job['actions'] as $action);
+				{
+					switch ($action)
+					{
+							case self::ACTION_CHANGE_SECTION:
+
+								$sectionID = $object->attribute('section_id');
+								
+								if ( array_key_exists($sectionID, $job['section_mappings']) )
+								{
+										$newSectionID = $job['section_mappings'][$sectionID];
+										
+										self::_Message("Parent node $nodeID ($index/$nodesCount): Changing section ID from $sectionID to $newSectionID for object " . $object->attribute('name') . " (ID: " . $object->attribute('id') . ")");
+										$object->setAttribute('section_id', $newSectionID);
+										$object->store();
+										$processedNodes[$action]++;
+								}
+							break;
+							case self::ACTION_MOVE:
+								$result['actions'][] = $action;
+							break;
+							case self::ACTION_HIDE:
+								$result['actions'][] = $action;
+							break;
+							case self::ACTION_DELETE:
+								$result['actions'][] = $action;
+							break;
+		
+							default:
+								// This shouldnt happen if INI parsing did the job								
+								self::_Message("Unknown action while processing job $jobName. This should not happen, please contact the saarchive author");
+							break;
 					}
 				}
+			}
 				
-			}
-			else
-			{
-				self::_Message("Nothing to process.");
-			}
+		}
+		else
+		{
+			self::_Message("Nothing to process.");
 		}
 		
 		return true;
