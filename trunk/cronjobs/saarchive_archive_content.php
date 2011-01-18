@@ -26,7 +26,9 @@ include_once('classes/saarchive.php');
 saArchive::$Cli = $cli;
 
 $archive = new saArchive();
-//print_r($archive);
+#print_r($archive);
+#exit;
+
 $archive->ProcessJobs();
 
 ?>
